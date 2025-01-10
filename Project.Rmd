@@ -1,0 +1,324 @@
+---
+title: "Key NBA Statistics Influencing Minutes Played Per Game: 2023-2024 Regular Season Analysis"
+author: "Wardah Ali, Navyasri Chinthapatla, Danae McCulloch, Safeen Mridha, Ayda Takehei"
+output: pdf_document
+date: "2024-11-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(olsrr)
+library(GGally)
+library(leaps)
+library(readr)
+library(car)
+library(mctest)
+library(ggplot2)
+library(caret)
+library(MASS)
+library(lmtest)
+library(readr)
+library(gridExtra)
+library(grid)
+library(ggplot2)
+
+nba=read_csv("NBA_Player_Stats_2023_24_per_game_1.csv", show_col_types = FALSE)
+nba = nba[, c("GP","MIN","FGM","FGA","FG_PCT","FG3M","FG3A","FTM","FTA","OREB","DREB","REB","AST","TOV",
+               "BLK","PF","PFD","PTS","PLUS_MINUS","DD2","TD3","STL","BLKA","FT_PCT","FG3_PCT")]
+
+head(nba)
+
+```
+
+
+# 3.1.1 Multicollinearity
+
+```{r}
+#Using VIF Test 
+nba_model=lm(MIN~., data=nba)
+imcdiag(nba_model, method="VIF")
+vif(nba_model) 
+
+```
+
+```{r}
+pairs(~FGM+FGA+FG3M+FG3A+FTM+FTA+OREB+DREB+PFD+PTS+REB, data = nba)
+
+```
+```{r}
+# Testing multicollinearity for the final model as stated in the report
+nba_base=lm(MIN~GP+FG_PCT+AST+TOV+BLK+PF+PLUS_MINUS+DD2+TD3+STL+BLK+BLKA+FT_PCT+FG3_PCT+FG3M+FTM+REB, data=nba)
+
+imcdiag(nba_base, method="VIF")
+vif(nba_base) 
+```
+
+
+
+# 3.1.2 Stepwise and Anova
+
+```{r}
+stepmod=ols_step_both_p(nba_base, p_enter = 0.05, p_remove = 0.05, details=TRUE)
+```
+
+
+```{r}
+nba_additive=lm(MIN~GP + STL + FG3M + REB + PF + BLKA + AST + TD3 + PLUS_MINUS + DD2 , data=nba)
+summary(nba_additive)
+
+anova(nba_additive, nba_base)
+```
+# 3.1.3 Interaction
+
+```{r}
+nba_step_int =lm(MIN~(GP + STL + FG3M + REB + PF + BLKA + AST + TD3 + PLUS_MINUS + DD2)^2, data=nba)
+
+ols_step_both_p(nba_step_int, p_enter = 0.05, p_remove = 0.05, details=TRUE)
+```
+
+
+```{r}
+nba_interactive1 = lm(MIN ~ DD2 +PF+  REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + PLUS_MINUS*DD2 + GP*PLUS_MINUS + BLKA:AST, data = nba)
+
+nba_interactive2 = lm(MIN ~ DD2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS + BLKA:AST, data = nba)
+
+nba_interactive3 = lm(MIN ~ DD2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data = nba)
+
+summary(nba_interactive1)
+summary(nba_interactive2)
+summary(nba_interactive3)
+
+```
+**Note:** Anova was tested as the two interactive models have very close Adjusted R and RSE.
+
+
+```{r}
+anova(nba_interactive3,nba_interactive1)
+```
+Interactive Model 2 is selected, as seen in report.
+
+## Anova for interactive and additive model
+```{r}
+anova(nba_additive,nba_interactive3)
+
+```
+
+# 3.1.4 Polynomials
+```{r}
+
+selected_columns= nba[, c("GP","STL","FG3M","REB","PF","BLKA","AST","TD3","PLUS_MINUS","DD2")]
+
+ggpairs(
+  selected_columns,
+  lower = list(continuous = wrap("smooth", color = "blue")),
+  diag = list(continuous = wrap("barDiag", color = "red")),
+  upper = list(continuous = wrap("cor", size = 5)),
+  title = "Pairwise Correlation Plot"
+)
+
+```
+
+```{r}
+nba_poly2 = lm(MIN ~ I(DD2)^2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data = nba)
+nba_poly3 =  lm(MIN ~ I(DD2)^3 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data = nba)
+print("Adjusted R for Polynomial degree 2:")
+summary(nba_poly2)$adj.r.squared
+print("Adjusted R for Polynomial degree 3:")
+summary(nba_poly3)$adj.r.squared
+print("Adjusted R for Interactive")
+summary(nba_interactive2)$adj.r.squared
+```
+# 3.2.1 Linearty
+```{r}
+ggplot(nba_interactive3, aes(x=.fitted, y=.resid)) +
+  geom_point() +geom_smooth()+
+  geom_hline(yintercept = 0)
+
+```
+
+# 3.2.2 Independence 
+```{r}
+plot(nba_interactive3$residuals, 
+     main = "Residuals Plot", 
+     xlab = "Index", 
+     ylab = "Residuals")
+
+```
+
+# 3.2.3 Equal Variance
+
+```{r}
+plot(nba_interactive3, which=1)
+plot(nba_interactive3, which=3) 
+bptest(nba_interactive2)
+
+```
+
+
+# 3.2.4 Normality
+
+```{r}
+#Histogram
+ggplot(data=nba, aes(residuals(nba_interactive3))) + 
+  geom_histogram(breaks = seq(-1,1,by=0.3), col="green3", fill="green4") + 
+  labs(title="Histogram for Residuals for Interactive Model") +
+  labs(x="residuals", y="Count")
+
+#QQ PLOT
+ggplot(nba, aes(sample = nba_interactive3$residuals)) +
+  stat_qq() +
+  stat_qq_line() +
+  labs(title = "Normality Assumption of Residuals for Interactive Model")
+```
+
+
+```{r}
+shapiro.test(residuals(nba_interactive3))
+```
+
+# 3.2.5 Box-Cox Transformation
+
+```{r}
+
+bc=boxcox(nba_interactive3,lambda=seq(-1,1))
+#extract best lambda
+bestlambda=bc$x[which(bc$y==max(bc$y))]
+#highlight best lambda
+abline(v = bestlambda, col = "red", lty = 2)
+bestlambda
+```
+```{r}
+bcmodel=lm((((MIN^0.7777778)-1)/0.7777778)~DD2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data=nba)
+summary(bcmodel) 
+bptest(bcmodel)
+shapiro.test(residuals(bcmodel))
+
+plot(bcmodel, which = 1, main = "Residuals vs Fitted Values for Transformed Model")
+abline(v = bestlambda, col = "red", lty = 2)
+```
+
+```{r}
+
+ggplot(data=nba, aes(residuals(bcmodel))) + 
+  geom_histogram(breaks = seq(-1,1,by=0.3), col="green3", fill="green4") + 
+  labs(title="Histogram for Residuals for Tranformed Model") +
+  labs(x="residuals", y="Count")
+
+
+ggplot(nba, aes(sample=bcmodel$residuals)) +
+  stat_qq() +
+  stat_qq_line()+
+  labs(title = "Normality Assumption of Residuals for Tranformed Model")
+
+```
+
+# 3.3 Outliers
+
+```{r}
+plot(bcmodel, which = 5, main = "Leverage Plot for Transformed Model")
+```
+```{r}
+plot(bcmodel, pch = 18, col = "red", which = 4, main = "Cook's Distance Influence Plot for Transformed Model")
+
+```
+# 3.4 Predictions and Final Model
+
+```{r}
+# Create training and testing sets
+set.seed(123)  # For reproducibility
+trainIndex = createDataPartition(nba$MIN, p = 0.8, list = FALSE, times = 1)
+
+# Training set
+data_train = nba[trainIndex,]
+
+# Testing set
+data_test = nba[-trainIndex,]
+
+# Display the number of rows in each set
+cat("Number of rows in training set:", nrow(data_train), "\n")
+cat("Number of rows in testing set:", nrow(data_test), "\n")
+```
+```{r}
+final_bcmodel = lm((((MIN^0.7777778)-1)/0.7777778)~DD2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data=data_train)
+
+#predictions on test data
+predictions = predict(final_bcmodel, newdata = data_test)
+
+#function to calculate R-squared
+calculate_r_squared = function(actual, predicted) {
+  rss <- sum((actual - predicted)^2)
+  tss <- sum((actual - mean(actual))^2)
+  r_squared <- 1 - (rss / tss)
+  return(r_squared)
+}
+
+#calculate and print metrics
+mse = mean((data_test$MIN - predictions)^2)
+cat("Mean Squared Error (MSE):", mse, "\n")
+
+train_r_squared = calculate_r_squared(data_train$MIN, predict(final_bcmodel, newdata = data_train))
+cat("Train R-squared (R^2):", train_r_squared, "\n")
+cat("Training Accuracy (%):", train_r_squared * 100, "\n")
+
+test_r_squared = calculate_r_squared(data_test$MIN, predictions)
+cat("Test R-squared (R^2):", test_r_squared, "\n")
+cat("Test Accuracy (%):", test_r_squared * 100, "\n")
+```
+
+```{r}
+final_int_model=lm(MIN ~ DD2 + PF + REB + FG3M + AST + GP:PF + BLKA + STL + STL*AST + GP + REB*PLUS_MINUS + FG3M*AST + REB*AST + GP*PLUS_MINUS, data = data_train)
+
+#predictions on test data
+predictions = predict(final_int_model, newdata = data_test)
+
+#function to calculate R-squared
+calculate_r_squared = function(actual, predicted) {
+  rss <- sum((actual - predicted)^2)
+  tss <- sum((actual - mean(actual))^2)
+  r_squared <- 1 - (rss / tss)
+  return(r_squared)
+}
+
+#calculate and print metrics
+mse = mean((data_test$MIN - predictions)^2)
+cat("Mean Squared Error (MSE):", mse, "\n")
+
+train_r_squared = calculate_r_squared(data_train$MIN, predict(final_int_model, newdata = data_train))
+cat("Train R-squared (R^2):", train_r_squared, "\n")
+cat("Training Accuracy (%):", train_r_squared * 100, "\n")
+
+test_r_squared = calculate_r_squared(data_test$MIN, predictions)
+cat("Test R-squared (R^2):", test_r_squared, "\n")
+cat("Test Accuracy (%):", test_r_squared * 100, "\n")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
